@@ -1,7 +1,7 @@
 TouchMouse
 ==========
 
-Injection patch prject to make old games (actually, Arcanum) work with Windows 8 touchscreen and stylus devices.
+Injection patch prject to make old games (actually, Arcanum) work with Windows 8 touchscreen and stylus devices. Also it emulates right click with two-finger gesture and customizable hotkey with 3-finger tap (hardcoded to ESC at this stage).
 
 Usage
 -----
