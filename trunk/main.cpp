@@ -4,6 +4,7 @@
 #pragma data_seg("Shared")
 
 static DWORD g_processId = 0;
+static bool g_hookMessages = false;
 
 #pragma data_seg()
 #pragma comment(linker, "/section:Shared,rws")
@@ -109,15 +110,14 @@ void logPrint(const char * format, ...)
 
 BOOL WINAPI DllMain( HINSTANCE hinstDll, DWORD fdwReason, PVOID fImpLoad )
 {
+#ifdef LOAD_GETPROCESSID
+	if (GetProcessId == NULL)
+		GetProcessId = (GETPROCESSID_T)GetProcAddress(LoadLibraryA("kernel32.dll"), "GetProcessId");
+#endif
 
 #ifdef LOAD_REGISTERTOUCH
 	if (RegisterTouchWindow == NULL)
 		RegisterTouchWindow = (REGISTERTOUCHWINDOW_T)GetProcAddress(LoadLibraryA("user32.dll"), "RegisterTouchWindow");
-#endif
-
-#ifdef LOAD_GETPROCESSID
-	if (GetProcessId == NULL)
-		GetProcessId = (GETPROCESSID_T)GetProcAddress(LoadLibraryA("kernel32.dll"), "GetProcessId");
 #endif
 
 	switch( fdwReason )
@@ -177,7 +177,7 @@ BOOL WINAPI DllMain( HINSTANCE hinstDll, DWORD fdwReason, PVOID fImpLoad )
 
 LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-#if EXTENDED_LOG
+#ifdef EXTENDED_LOG
 	logPrint("Processing custom proc for window %i, uMsg: %i\n", hWnd, uMsg);	
 #endif
 	static int pointers[2] = {0,0};
@@ -213,7 +213,7 @@ LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 							break;
 						}
 					}
-#if EXTENDED_LOG
+#ifdef EXTENDED_LOG
 					logPrint("Non primary pointer pos x: %i, y: %i, type %X\n", ((int)(short)LOWORD(lParam)), ((int)(short)HIWORD(lParam)), wParam);
 #endif
 					if (!found)
@@ -256,6 +256,10 @@ LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				int x = ((int)(short)LOWORD(lParam)); 
 				int y = ((int)(short)HIWORD(lParam)); 
 			
+#ifdef EXTENDED_LOG
+				logPrint("Got WM_POINTERUPDATE wparam %X, x %i, y %i\n", uMsg, x, y);
+#endif
+
 				if (IS_POINTER_PRIMARY_WPARAM(wParam))
 				{
 					SetCursorPos(x, y);
@@ -267,7 +271,7 @@ LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		case WM_TOUCH:
 			return S_FALSE;
 		default:
-#if EXTENDED_LOG
+#ifdef EXTENDED_LOG
 			logPrint("WM message %X, wparam %X, lparam %X\n", uMsg, wParam, lParam);
 #endif
 			break;
@@ -284,7 +288,7 @@ LRESULT WINAPI ShellProc( int nCode, WPARAM wParam, LPARAM lParam )
 {
 	DWORD processId = GetCurrentProcessId();
 
-#if EXTENDED_LOG
+#ifdef EXTENDED_LOG
 	logPrint("Got shell proc %i, process id %i, our process id %i\n", nCode, processId, g_processId);
 #endif
 
@@ -311,10 +315,13 @@ LRESULT WINAPI ShellProc( int nCode, WPARAM wParam, LPARAM lParam )
 
 				if (oldWindowProc != CustomProc)
 				{
-					SetWindowLong(hWnd, GWL_WNDPROC, (LPARAM)CustomProc);
-					logPrint("Hook set, oldproc %i\n", oldWindowProc);
-					SetProp(hWnd, "PROP_PROC", oldWindowProc);
-					
+					if (g_hookMessages)
+					{
+						SetWindowLong(hWnd, GWL_WNDPROC, (LPARAM)CustomProc);
+						logPrint("Hook set, oldproc %i\n", oldWindowProc);
+						SetProp(hWnd, "PROP_PROC", oldWindowProc);
+					}
+
 					ShowCursor(true);
 
 					if (RegisterTouchWindow)
@@ -386,9 +393,11 @@ bool InjectCode(LPSECURITY_ATTRIBUTES securityAttributes, HANDLE hProcess, const
 	return result;
 }
 */
-void _stdcall CALLBACK Start(HWND hwnd, HINSTANCE hinst, LPSTR lpszCmdLine,
-               int nCmdShow)
+
+void DoStart(LPSTR lpszCmdLine, bool hook)
 {
+	g_hookMessages = hook;
+
 	STARTUPINFOA startupInfo;
 	memset(&startupInfo, 0, sizeof(STARTUPINFOA));
 
@@ -407,8 +416,20 @@ void _stdcall CALLBACK Start(HWND hwnd, HINSTANCE hinst, LPSTR lpszCmdLine,
 		//InjectCode(&securityAttributes, processInfo.hProcess, "TouchMouse.dll");
 
 		WaitForInputIdle(processInfo.hProcess, INFINITE);
+
 		logPrint("Process started with id %i\n", g_processId);
 	} else
 		logPrint("Failed to start %s: %i\r\n", lpszCmdLine, GetLastError());
 }
 
+void _stdcall CALLBACK Start(HWND hwnd, HINSTANCE hinst, LPSTR lpszCmdLine,
+               int nCmdShow)
+{
+	DoStart(lpszCmdLine, true);
+}
+
+void _stdcall CALLBACK StartNoHook(HWND hwnd, HINSTANCE hinst, LPSTR lpszCmdLine,
+               int nCmdShow)
+{
+	DoStart(lpszCmdLine, false);
+}
