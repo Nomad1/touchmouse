@@ -1,0 +1,6 @@
+; GPExtension.def : Declares the module parameters.
+
+LIBRARY      "TouchMouse.dll"
+
+EXPORTS
+	Start
