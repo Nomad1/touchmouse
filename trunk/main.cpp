@@ -146,6 +146,9 @@ LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	static int pointers[2] = {0,0};
     static bool releaseSecond = false;
 
+   
+
+
 	switch (uMsg)
 	{
 		case WM_POINTERDOWN:
@@ -292,7 +295,7 @@ LRESULT WINAPI ShellProc( int nCode, WPARAM wParam, LPARAM lParam )
 						SetProp(hWnd, "PROP_PROC", oldWindowProc);
 					}
 
-					ShowCursor(true);
+					//ShowCursor(true);
 
 					if (RegisterTouchWindow)
 						RegisterTouchWindow(hWnd, TWF_WANTPALM);
@@ -305,6 +308,11 @@ LRESULT WINAPI ShellProc( int nCode, WPARAM wParam, LPARAM lParam )
 #ifdef USE_TOUCHDISABLE
                     SetTouchDisableProperty(hWnd, true);
 #endif
+
+                    int mouseAccel[3] = {0,0,0};
+
+    	            SystemParametersInfo(SPI_SETMOUSESPEED, 0, (LPVOID)10, 0); // set mouse speed to default value
+    	            SystemParametersInfo(SPI_SETMOUSE, 0, &mouseAccel, 0); // disable enchanced precision
 				}
 			}
 			break;
