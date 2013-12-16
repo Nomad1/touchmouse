@@ -1,7 +1,7 @@
 TouchMouse
 ==========
 
-TouchMouse is a DLL loader designed to patch old games (mostly Arcanum and Fallout 2) to work with Windows 8 touchscreen and stylus devices. Also in WM preprocesssing mode it emulates right click with two-finger gesture and customizable hotkey with 3-finger tap (hardcoded to ESC at this stage).
+TouchMouse is a DLL loader designed to patch old games (mostly Arcanum and Fallout 2) to work with Windows 8 touchscreen and stylus devices. Also in WM preprocesssing mode it emulates right click with two-finger gesture or stylus button and customizable hotkey with 3-finger tap (hardcoded to ESC at this stage).
 
 
 Usage
@@ -25,7 +25,7 @@ Launch from command line or set shortcut command to this:
 Compilation
 -----
 
-First version of this project was build with Visual Studio 6.0 (yeah, VS98!). There is no external dependencies, frameworks, non-system DLLs. I'm pretty sure you can upgrade it to some recent Visual Studio with corresponding Platform SDK. It can happen that you'll also need to comment out some defines in main.cpp.
+First version of this project was build with Visual Studio 6.0 (yeah, VS98!). There is no external dependencies, frameworks, non-system DLLs. Also it is compatible with Visual Studio 2012. Corresponding .sln and .vcxxproj files are at the same folder.
 
 
 Contribution
@@ -35,7 +35,7 @@ Feel free to fork the software to add support for more games, external configs, 
 
 Disable Windows 8 charms
 -----
-Windows 8 gestures and panels could be very annoying at some point. I'm planning to disable them with PKEY_EdgeGesture_DisableTouchWhenFullscreen at some near future, but right now you can use following registry tweak to disable them:
+Windows 8 gestures and panels could be very annoying at some point. If you compile DLL with VS 2012 those are disabled automatically. For VS98 there is no support for  this methods and VARIANT types, so you can use following registry tweak to disable them (not tested in real environment!):
 
     [HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\ImmersiveShell\EdgeUI]
     "DisabledEdges"=dword:0000000f
