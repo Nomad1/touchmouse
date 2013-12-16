@@ -43,4 +43,4 @@ Windows 8 gestures and panels could be very annoying at some point. If you compi
 
 Mouse speed and "Enhance Pointer Precision"
 -----
-Non-default mouse speed and "Enhance Pointer Precision" are totally inompatible with this library. Starting from build 0.3.0.67 both options are reset to default values on start. You might say it is not a good idea to change user PC settings, but I think it is much better than adding a note 'reset your mouse settings' to Readme file, that actually is never read by end users.
+Non-default mouse speed and "Enhance Pointer Precision" are totally inompatible with this library. Starting from build 0.3.0.67 both options are reset to default values on start. You might say it is not a good idea to change user PC settings, but I think it is much better than adding a note 'reset your mouse settings' to Readme file, that is actually never read by end users.
