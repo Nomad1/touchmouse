@@ -1,0 +1,34 @@
+#include <windows.h>
+#define VERSION_COMMAS 0,3,1,72
+#define VERSION_STRING "0.3.1.72"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION VERSION_COMMAS
+ PRODUCTVERSION VERSION_COMMAS
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x2L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription", "TouchMouse project: injection patch for old games to support Windows 8 touch input. https://github.com/Nomad1/touchmouse/"
+            VALUE "FileVersion", VERSION_STRING
+            VALUE "InternalName", "TouchMouse.dll"
+            VALUE "OriginalFilename", "TouchMouse.dll"
+            VALUE "ProductName", "TouchMouse"
+            VALUE "ProductVersion", VERSION_STRING
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
