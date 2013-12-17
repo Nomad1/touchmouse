@@ -7,6 +7,7 @@ TouchMouse is a DLL loader designed to patch old games (mostly Arcanum and Fallo
 Usage
 -----
 
+### Standalone usage
 There are two injection modes: with Window Messages (WM) pre-processing and without them. Pre-processing messages allows to add gesture recognition and tweak some settings, but it can cause problems with some games. (Actually Fallout 2 at this moment crashes in WM mode).
 There are two entry points in project DLL: Start and StartNoHook. Use first one for Arcanum and similar games and second one if you experience crashes and/or weird bugs. 
 
@@ -20,6 +21,9 @@ Launch from command line or set shortcut command to this:
 
     rundll32.exe TouchMouse.dll,StartNoHook Fallout2.exe
 
+## Working with ASI Loader
+
+Starting with version 0.3.1 TouchMouse can work with ASI Loader (https://github.com/ThirteenAG/Ultimate_ASI_Loader/releases). Even more, some games ( = Arcanum) are already able to load .asi files without any modifications. Minimal TouchMouse.asi (2kb size) is provided with full source code. Install ASI Loader (not needed for Arcanum), put the file  with TouchMouse.dll to game folder and launch the game as usually.
 
 
 Compilation
