@@ -6,6 +6,8 @@ static const char * OldProcProperty = "TouchMouseOldAddressProperty";
 static const char * MSTabletPenProperty = "MicrosoftTabletPenServiceProperty";
 //#define EXTENDED_LOG
 
+#define ARCANUM_POINTER_ADDRESS 0x06046AC // NOTE: it can be changed by lots of factors!
+
 #pragma data_seg("Shared")
 
 static DWORD g_processId = 0;
@@ -117,6 +119,8 @@ static HHOOK g_hook = NULL;
 static int g_screenX = 0;
 static int g_screenY = 0;
 
+static bool g_isArcanum = false;
+
 /* Forward declaration */
 
 LRESULT WINAPI ShellProc( int nCode, WPARAM wParam, LPARAM lParam );
@@ -149,6 +153,76 @@ void logPrint(const char * format, ...)
 	}
 }
 
+#if USE_MEMORY_SCAN
+DWORD ScanMemory(long long value)
+{
+    logPrint("Starting memory scan for 0x%08X%08X\r\n", (int)(value >> 32), (int)value);
+
+    MEMORY_BASIC_INFORMATION mbi = {0};
+    unsigned char *pAddress   = NULL,
+                 *pEndRegion = NULL;
+
+    DWORD   dwProtectionMask    = PAGE_READONLY | PAGE_EXECUTE_WRITECOPY 
+                                  | PAGE_READWRITE | PAGE_WRITECOMBINE;
+
+    while( sizeof(mbi) == VirtualQuery(pEndRegion, &mbi, sizeof(mbi)) )
+    {
+        pAddress = pEndRegion;
+        pEndRegion = pEndRegion + mbi.RegionSize;
+
+        if ((mbi.AllocationProtect & dwProtectionMask) && (mbi.State & MEM_COMMIT))
+        {
+             for (pAddress; pAddress < pEndRegion ; pAddress+=4)
+             {
+                 if (*(long long*)pAddress == value)
+                 {
+                     logPrint("Pattern found at 0x%08X\r\n", pAddress);
+                     //return (DWORD)pAddress;
+                 }
+             }
+        }
+    }
+    return 0;
+}
+#endif
+
+void CorrectPointer(LPPOINT coords)
+{
+    if (g_isArcanum)
+    {
+        DWORD * address = (DWORD*)ARCANUM_POINTER_ADDRESS;
+        int x = *address;
+        int y = *(address+1);
+
+        if (x >= 0 && x < g_screenX && y >= 0 && y < g_screenY)
+        {
+            coords->x = x;
+            coords->y = y;
+            SetCursorPos(x, y);
+        } else
+        {
+            logPrint("Mouse memory address points to junk!\r\n");
+            g_isArcanum = false;
+        }
+    }
+}
+
+#include <process.h>
+
+void __cdecl SimulateClick(void * args)
+{
+    logPrint("Calling tap and hold click simulation\r\n");
+    Sleep(100);
+    keybd_event(VK_MENU, 0, 0, 0);
+    Sleep(100);
+    mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, MOUSEEVENTF_FROMTOUCH);
+    Sleep(100);
+    mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, MOUSEEVENTF_FROMTOUCH);
+    Sleep(100);
+    keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
+    Sleep(100);
+}
+
 LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 #ifdef EXTENDED_LOG
@@ -157,6 +231,10 @@ LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	static short int pointers[5] = {0,0,0,0,0};
     static short int releaseFirst = 0;
     static short int releaseSecond = 0;
+
+    // for tap and hold gesture
+    static short int tapAndHoldCoord[2] = {0,0};
+    static int tapAndHoldTimer = 0;
 
 	switch (uMsg)
 	{
@@ -180,30 +258,48 @@ LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 #ifdef EXTENDED_LOG
 				logPrint("Touches: %i, pos x: %i, y: %i, flags %X\r\n", touches, ((int)(short)LOWORD(lParam)), ((int)(short)HIWORD(lParam)), wParam);
 #endif
+                POINT last;
+        		GetCursorPos(&last);
+                CorrectPointer(&last);
+
                 switch(touches)
                 {
                 case 0: // never happens
                     break;
                 case 1:
                     {
-                        POINT last;
-        				GetCursorPos(&last);
                         int x = ((int)(short)LOWORD(lParam)); 
 					    int y = ((int)(short)HIWORD(lParam)); 
                     
 					    mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_MOVE, x - last.x, y - last.y, 0, MOUSEEVENTF_FROMTOUCH);
 					    SetCursorPos(x, y);
                         releaseFirst = pointer;
+
+                        // init tap and hold timer
+                        tapAndHoldTimer = GetTickCount();
+                        tapAndHoldCoord[0] = x;
+                        tapAndHoldCoord[1] = y;
                     }
                     break;
                 case 3: 
-                    logPrint("Calling ESC key\r\n");
-                    keybd_event(VK_ESCAPE, 1, 0, 0);
-                    keybd_event(VK_ESCAPE, 1, KEYEVENTF_KEYUP, 0);
+                    logPrint("Three-finger tap detected! Calling ESC key\r\n");
+                    keybd_event(VK_ESCAPE, 0, 0, 0);
+                    keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0);
                     break;
-                case 4: 
+                case 4:
+                    break; 
                 case 5:
+#if USE_MEMORY_SCAN
+                    {
+                        #define MAKELONGLONG(a,b) ((long long)(((long)(a)&0xFFFFFFFF) | (((long long)((long) (b)&0xFFFFFFFF)) << 32)))
+
+                        POINT last;
+        				GetCursorPos(&last);
+                        ScanMemory(MAKELONGLONG(last.x, last.y));
+                    }
+#endif
                     break;
+
                 case 2: // second finger or stylus button
                     mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, MOUSEEVENTF_FROMTOUCH);
                     releaseSecond = pointer;
@@ -228,6 +324,11 @@ LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				{
 					mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, MOUSEEVENTF_FROMTOUCH);
                     releaseFirst = 0;
+
+                    if (tapAndHoldTimer && GetTickCount() - tapAndHoldTimer > 500) // pressing at same position for more than 500 ms
+                        _beginthread(&SimulateClick, 0, NULL);
+
+                    tapAndHoldTimer = 0; // tap and hold cancelled or completed
 				}
 
                 if (releaseSecond == pointer)
@@ -235,6 +336,7 @@ LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 					mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, MOUSEEVENTF_FROMTOUCH);
                     releaseSecond = 0;
 				}
+                
 			}
 			return S_FALSE;
 		case WM_POINTERUPDATE:
@@ -254,6 +356,13 @@ LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     mouse_event(MOUSEEVENTF_MOVE, x - last.x, y - last.y, 0, MOUSEEVENTF_FROMTOUCH);
 					SetCursorPos(x, y);
 				}
+
+                if (pointer == releaseFirst && tapAndHoldTimer && (abs(x - tapAndHoldCoord[0]) > 4 || abs(y - tapAndHoldCoord[1]) > 4)) // first pointer moved
+                {
+                    tapAndHoldTimer = GetTickCount(); // reset timer
+                    tapAndHoldCoord[0] = x;
+                    tapAndHoldCoord[1] = y;
+                } 
 			}
 			return S_FALSE;
 		case WM_TOUCH:
@@ -264,6 +373,8 @@ LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 #endif
 			break;
 	}
+
+
 	WNDPROC oldProc = (WNDPROC)GetProp(hWnd, OldProcProperty);
 
 	if (oldProc != NULL)
@@ -448,6 +559,8 @@ BOOL WINAPI DllMain( HINSTANCE hinstDll, DWORD fdwReason, PVOID fImpLoad )
 			{
 				logPrint("Got empty process module name, id %i\r\n", processId);
 			}
+
+            g_isArcanum = stristr(exeName, "arcanum") != NULL;
 
 			if (g_processId == 0)// stristr(exeName, "rundll32")) // loading from RunDll32
 			{
