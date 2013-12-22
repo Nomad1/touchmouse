@@ -1,30 +1,68 @@
 TouchMouse
 ==========
 
-TouchMouse is a DLL loader designed to patch old games (mostly Arcanum and Fallout 2) to work with Windows 8 touchscreen and stylus devices. Also in WM preprocesssing mode it emulates right click with two-finger gesture or stylus button and customizable hotkey with 3-finger tap (hardcoded to ESC at this stage).
+TouchMouse is a DLL loader designed to patch old games (Arcanum, Fallout, ToEE and others) to work with Windows 8 touchscreen and stylus devices. Also in WM preprocesssing mode it emulates right click with two-finger gesture or stylus button and customizable hotkey with 3-finger tap (hardcoded to ESC at this stage).
 
 
-Usage
+Installation
 -----
 
-### Standalone usage
-There are two injection modes: with Window Messages (WM) pre-processing and without them. Pre-processing messages allows to add gesture recognition and tweak some settings, but it can cause problems with some games. (Actually Fallout 2 at this moment crashes in WM mode).
-There are two entry points in project DLL: Start and StartNoHook. Use first one for Arcanum and similar games and second one if you experience crashes and/or weird bugs. 
+Starting with version 0.3.1 TouchMouse is provided in form of .ASI + .DLL files to work with [ASI Loader](https://github.com/ThirteenAG/Ultimate_ASI_Loader/releases). Install the loader from above link (skip this step for Arcanum and ToEE) and copy files from _build_ folder to your game folder and launch the game as usually.
 
-## Starting in WM preprocessing mode (Arcanum and other games that do not crash on start)
-Launch from command line or set shortcut command to this:
+If you don't like ASI Loader idea it is possible to launch the DLL directly from command line:
 
     rundll32.exe TouchMouse.dll,Start Arcanum.exe -no3d 
 
-## NoHook mode (Fallout 2 and similar games that are not 100% compatible with TouchMouse)
-Launch from command line or set shortcut command to this:
+If there are crashes on start you could also try NoHook mode (no message queue injection):
 
     rundll32.exe TouchMouse.dll,StartNoHook Fallout2.exe
 
-## Working with ASI Loader
 
-Starting with version 0.3.1 TouchMouse can work with ASI Loader (https://github.com/ThirteenAG/Ultimate_ASI_Loader/releases). Even more, some games ( = Arcanum) are already able to load .asi files without any modifications. Minimal TouchMouse.asi (2kb size) is provided with full source code. Install ASI Loader (not needed for Arcanum), put the file  with TouchMouse.dll to game folder and launch the game as usually.
+Supported Games
+-----
 
+Note that there are games that could benefit from TouchMouse even if they don't have issues with pointer position. Some games require you to use re-calibrate command (five-finger tap with default .ini file)
+
+<table>
+    <tr>
+        <th>Game</th>
+        <th>Status</th>
+        <th>Need ASI Loader</th>
+        <th>Description</th>
+    </tr>
+    <tr>
+        <td><a href="http://www.gog.com/game/arcanum_of_steamworks_and_magick_obscura">Arcanum: Of Steamworks and Magick Obscura</a></td>
+        <td>Gold*</td>
+        <td>No</td>
+        <td>Works perfectly. Two fingers gesture defaults to right click, Three fingers tap calls ESC, Tap&Hold calls Alt-Click (attach door or chest or drag the body)</td>
+    </tr>
+    <tr>
+        <td><a href="http://www.gog.com/game/fallout_2">Fallout 2</a></td>
+        <td>Silver*</td>
+        <td>Yes</td>
+        <td>Sometimes cursor can appear shifted but it is solved on the next tap (only with memory search)  or by re-calibration</td>
+    </tr>
+    <tr>
+        <td><a href="http://www.gog.com/game/fallout">Fallout</a></td>
+        <td>Bronze*</td>
+        <td>Yes</td>
+        <td>Cursor jitters on touch</td>
+    </tr>
+    <tr>
+        <td><a href="http://www.gog.com/game/might_and_magic_7_for_blood_and_honor">Might and Magic 7</a></td>
+        <td>Garbage</td>
+        <td>Yes</td>
+        <td>Mouse pointer moves correctly but game is useless without keyboard or on-screen overlay with movement keys (planned in next versions).</td>
+    </tr>
+    <tr>
+        <td><a href="http://www.gog.com/game/the_temple_of_elemental_evil">Temple Of Elemental Evil</a></td>
+        <td>Bronze</td>
+        <td>No</td>
+        <td>Fails to find memory address. You need to re-calibrate from time to time. It is advised to set TapAndHold=2 in .ini file to simulate right click with tap&hold gesture.</td>
+    </tr>
+</table>
+
+<span>* Game would benefit from memory search feature and correct address in .ini file</span>
 
 Compilation
 -----
@@ -39,7 +77,7 @@ Feel free to fork the software to add support for more games, external configs, 
 
 Disable Windows 8 charms
 -----
-Windows 8 gestures and panels could be very annoying at some point. If you compile DLL with VS 2012 (or use pre-compiled DLL from _build_ folder) those are disabled automatically. For VS98 there is no support for  this methods and VARIANT types, so you can use following registry tweak to disable them (not tested in real environment!):
+Windows 8 gestures and panels could be very annoying at some point. If you compile DLL with VS 2012 (or use pre-compiled DLL from _build_ folder) those are disabled automatically. For VS98 there is no support for this methods and VARIANT types, so you can use following registry tweak to disable them (not tested in real environment!):
 
     [HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\ImmersiveShell\EdgeUI]
     "DisabledEdges"=dword:0000000f
@@ -47,4 +85,14 @@ Windows 8 gestures and panels could be very annoying at some point. If you compi
 
 Mouse speed and "Enhance Pointer Precision"
 -----
-Non-default mouse speed and "Enhance Pointer Precision" are totally inompatible with this library. Starting from build 0.3.0.67 both options are reset to default values on start. You might say it is not a good idea to change user PC settings, but I think it is much better than adding a note 'reset your mouse settings' to Readme file, that is actually never read by end users.
+Non-default mouse speed and "Enhance Pointer Precision" are totally inompatible with this library. Starting from build 0.3 both options are reset to default values on start. You might say it is not a good idea to change user PC settings, but I think it is much better than adding a note 'reset your mouse settings' to Readme file, that is actually never read by end users.
+
+
+Reading mouse coords from game memory
+-----
+TouchMouse from version 0.3.5 is able to read pointer coord from game memory. This gives 100% game compatibility but could not work with modified .exes and mods. Pointer addresses are stored in TouchMouse.ini file and you can alter or disable them if needed. Also there is a function to scan game memory for this address, but it is rather unstable now and disabled by default. To enable it uncomment line ;ScanKey=20 in .ini and press CapsLock (or other key if you changed the code in .ini) to start scan. This would lead to game crash in 99.9% cases but all addresses found are stored in touch.log file. Choose one, convert it from hex to decimal and put to [MemoryAddress] section.
+
+Customizable gestures
+-----
+Currently .ini file allows few modifications for in-game tap gestures. It takes raw VK_ code numbers and have lot of limitations. There are plans to update the .ini to human-readable format and allow literal key names, add more gestures, etc. Note that multi-finger taps are always called sequentually, i.e. 3 finger tap is threated as 1-finger tap, 2-finger tap and 3-finger taps at the same time.
+
