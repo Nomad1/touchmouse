@@ -2,11 +2,10 @@
 #include <windows.h>
 
 static const char * LogFile = "touch.log";
+static const char * IniFile = ".\\TouchMouse.ini";
 static const char * OldProcProperty = "TouchMouseOldAddressProperty";
 static const char * MSTabletPenProperty = "MicrosoftTabletPenServiceProperty";
 //#define EXTENDED_LOG
-
-#define ARCANUM_POINTER_ADDRESS 0x06046AC // NOTE: it can be changed by lots of factors!
 
 #pragma data_seg("Shared")
 
@@ -17,6 +16,8 @@ static bool g_hookMessages = false;
 #pragma comment(linker, "/section:Shared,rws")
 
 #define MOUSEEVENTF_FROMTOUCH			0xFF515700
+#define MAKELONGLONG(a,b) ((long long)(((long)(a)&0xFFFFFFFF) | (((long long)((long) (b)&0xFFFFFFFF)) << 32)))
+
 
 /* WINAPI defines for VC 6.0 */
 #if (WINVER < 0x500)
@@ -118,8 +119,18 @@ static HHOOK g_hook = NULL;
 
 static int g_screenX = 0;
 static int g_screenY = 0;
+static volatile bool g_calibrating = false;
 
-static bool g_isArcanum = false;
+// memory address of mouse pointer
+static DWORD g_mousePointerAddress = 0;
+
+// virtual keys
+static int g_twoFingerTap = VK_RBUTTON;
+static int g_threeFingerTap = VK_ESCAPE;
+static int g_fourFingerTap = 0;
+static int g_fiveFingerTap = 0;
+static int g_tapAndHold = VK_MENU;
+static int g_scanKey = 0;
 
 /* Forward declaration */
 
@@ -153,10 +164,33 @@ void logPrint(const char * format, ...)
 	}
 }
 
-#if USE_MEMORY_SCAN
+/* configuration */
+
+void loadSettings(const char * iniFile, const char * exeFile)
+{
+    if (exeFile)
+    {
+        logPrint("Checking address for exe file %s\r\n", exeFile + 1);
+        g_mousePointerAddress = GetPrivateProfileInt("MemoryAddress", exeFile + 1, g_mousePointerAddress, iniFile);
+
+        if (g_mousePointerAddress == 0 && stristr(exeFile, "arcanum.exe")) // TODO: remove this when we start using .ini files for all games!
+            g_mousePointerAddress = 0x06046AC; 
+    }
+    g_scanKey = GetPrivateProfileInt("MemoryAddress", "ScanKey", g_scanKey, iniFile);
+
+    g_twoFingerTap = GetPrivateProfileInt("Gestures", "TwoFingerTap", g_twoFingerTap, iniFile);
+    g_threeFingerTap = GetPrivateProfileInt("Gestures", "ThreeFingerTap", g_threeFingerTap, iniFile);
+    g_fourFingerTap = GetPrivateProfileInt("Gestures", "FourFingerTap", g_fourFingerTap, iniFile);
+    g_fiveFingerTap = GetPrivateProfileInt("Gestures", "FiveFingerTap", g_fiveFingerTap, iniFile);
+    g_tapAndHold = GetPrivateProfileInt("Gestures", "TapAndHold", g_tapAndHold, iniFile);
+
+    if (errno == 0x2)
+        logPrint("Ini file %s not found\r\n", iniFile);
+}
+
 DWORD ScanMemory(long long value)
 {
-    logPrint("Starting memory scan for 0x%08X%08X\r\n", (int)(value >> 32), (int)value);
+    logPrint("Starting memory scan for 0x%08X%08X, own address is 0x%08X\r\n", (int)(value >> 32), (int)value, &value);
 
     MEMORY_BASIC_INFORMATION mbi = {0};
     unsigned char *pAddress   = NULL,
@@ -170,7 +204,7 @@ DWORD ScanMemory(long long value)
         pAddress = pEndRegion;
         pEndRegion = pEndRegion + mbi.RegionSize;
 
-        if ((mbi.AllocationProtect & dwProtectionMask) && (mbi.State & MEM_COMMIT))
+        if (mbi.Protect != PAGE_NOACCESS && mbi.Protect != PAGE_EXECUTE && (mbi.AllocationProtect & dwProtectionMask) && (mbi.State & MEM_COMMIT))
         {
              for (pAddress; pAddress < pEndRegion ; pAddress+=4)
              {
@@ -184,25 +218,33 @@ DWORD ScanMemory(long long value)
     }
     return 0;
 }
-#endif
 
 void CorrectPointer(LPPOINT coords)
 {
-    if (g_isArcanum)
+    if (g_mousePointerAddress)
     {
-        DWORD * address = (DWORD*)ARCANUM_POINTER_ADDRESS;
+        DWORD * address = (DWORD*)g_mousePointerAddress;
         int x = *address;
         int y = *(address+1);
 
         if (x >= 0 && x < g_screenX && y >= 0 && y < g_screenY)
         {
-            coords->x = x;
-            coords->y = y;
-            SetCursorPos(x, y);
+            if (x != coords->x || y != coords->y)
+            {
+#if EXTENDED_LOG
+                logPrint("Corrected pointer coords to %i,%i from %i,%i\r\n", x,y, coords->x, coords->y);
+#endif
+                coords->x = x;
+                coords->y = y;
+                SetCursorPos(x, y);
+            }
         } else
         {
-            logPrint("Mouse memory address points to junk!\r\n");
-            g_isArcanum = false;
+            if (x == -1 && y == -1) // not yet inited in Fallout and similar games
+                return;
+
+            logPrint("Mouse memory address points to junk: %i, %i!\r\n", x, y);
+            g_mousePointerAddress = 0;
         }
     }
 }
@@ -211,16 +253,51 @@ void CorrectPointer(LPPOINT coords)
 
 void __cdecl SimulateClick(void * args)
 {
-    logPrint("Calling tap and hold click simulation\r\n");
+    logPrint("Calling tap and hold click simulation with modifier key %x\r\n", g_tapAndHold);
     Sleep(100);
-    keybd_event(VK_MENU, 0, 0, 0);
+
+    if (g_tapAndHold == VK_RBUTTON)
+    {
+        mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, MOUSEEVENTF_FROMTOUCH);
+        Sleep(100);
+        mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, MOUSEEVENTF_FROMTOUCH);
+    } else
+    {
+        keybd_event(g_tapAndHold, 0, 0, 0);
+        Sleep(100);
+        mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, MOUSEEVENTF_FROMTOUCH);
+        Sleep(100);
+        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, MOUSEEVENTF_FROMTOUCH);
+        Sleep(100);
+        keybd_event(g_tapAndHold, 0, KEYEVENTF_KEYUP, 0);
+        Sleep(100);
+    }
+}
+
+void __cdecl SendKey(void * args)
+{
+    UINT code = (UINT)args;
+    int scan = MapVirtualKey(code, 0);
+    logPrint("Sending key %i, scan code %i\r\n", code, scan);
     Sleep(100);
-    mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, MOUSEEVENTF_FROMTOUCH);
+    keybd_event(code, scan, KEYEVENTF_SCANCODE, 0);
     Sleep(100);
-    mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, MOUSEEVENTF_FROMTOUCH);
+    keybd_event(code, scan, KEYEVENTF_KEYUP | KEYEVENTF_SCANCODE, 0);
+}
+
+void __cdecl StartCalibrate(void * args)
+{
+    POINT last;
+    GetCursorPos(&last);
+    logPrint("Starting calibrate\r\n");
+    g_calibrating = true;
+    Sleep(500);
+    mouse_event(MOUSEEVENTF_MOVE, -2000, -2000, 0, MOUSEEVENTF_FROMTOUCH);
+	SetCursorPos(0, 0);
     Sleep(100);
-    keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
-    Sleep(100);
+    mouse_event(MOUSEEVENTF_MOVE, last.x, last.y, 0, MOUSEEVENTF_FROMTOUCH);
+    SetCursorPos(last.x, last.y);
+    g_calibrating = false;
 }
 
 LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -238,8 +315,23 @@ LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 	switch (uMsg)
 	{
+        case WM_KEYUP:
+            if (g_scanKey)
+            {
+                logPrint("Key pressed %x\r\n", wParam);
+                if (wParam == g_scanKey)
+                {
+                    POINT last;
+        		    GetCursorPos(&last);
+                    ScanMemory(MAKELONGLONG(last.x, last.y));
+                }
+            }
+            break;
 		case WM_POINTERDOWN:
 			{
+                if (g_calibrating)
+                    break;
+
                 int touches = 0;
                 short int pointer = GET_POINTERID_WPARAM(wParam);
                 for(int i = 0; i < 5; i++)
@@ -273,36 +365,55 @@ LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     
 					    mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_MOVE, x - last.x, y - last.y, 0, MOUSEEVENTF_FROMTOUCH);
 					    SetCursorPos(x, y);
+
                         releaseFirst = pointer;
 
-                        // init tap and hold timer
-                        tapAndHoldTimer = GetTickCount();
-                        tapAndHoldCoord[0] = x;
-                        tapAndHoldCoord[1] = y;
+                        if (g_tapAndHold) // init tap and hold timer
+                        {
+                            tapAndHoldTimer = GetTickCount();
+                            tapAndHoldCoord[0] = x;
+                            tapAndHoldCoord[1] = y;
+                        }
                     }
                     break;
                 case 3: 
-                    logPrint("Three-finger tap detected! Calling ESC key\r\n");
-                    keybd_event(VK_ESCAPE, 0, 0, 0);
-                    keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0);
+                    logPrint("Three-finger tap detected! Calling 0x%x key\r\n", g_threeFingerTap);
+                    if (g_threeFingerTap)
+                    {
+                        _beginthread(&SendKey, 0, (void*)g_threeFingerTap);
+                    }
                     break;
                 case 4:
+                    logPrint("Four-finger tap detected! Calling 0x%x key\r\n", g_fourFingerTap);
+                    if (g_fourFingerTap)
+                    {
+                        _beginthread(&SendKey, 0, (void*)g_fourFingerTap);
+                    }
                     break; 
                 case 5:
-#if USE_MEMORY_SCAN
+                    logPrint("Five-finger tap detected! Calling 0x%x key\r\n", g_fiveFingerTap);
+                    if (g_fiveFingerTap)
                     {
-                        #define MAKELONGLONG(a,b) ((long long)(((long)(a)&0xFFFFFFFF) | (((long long)((long) (b)&0xFFFFFFFF)) << 32)))
 
-                        POINT last;
-        				GetCursorPos(&last);
-                        ScanMemory(MAKELONGLONG(last.x, last.y));
+                        if (g_fiveFingerTap == VK_NONAME)
+                            _beginthread(&StartCalibrate, 0, NULL);
+                        else
+                        {
+                            _beginthread(&SendKey, 0, (void*)g_fiveFingerTap);
+                        }
                     }
-#endif
                     break;
 
                 case 2: // second finger or stylus button
-                    mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, MOUSEEVENTF_FROMTOUCH);
-                    releaseSecond = pointer;
+
+                    if (g_twoFingerTap == VK_RBUTTON)
+                    {
+                        mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, MOUSEEVENTF_FROMTOUCH);
+                        releaseSecond = pointer;
+                    } else
+                    {
+                        _beginthread(&SendKey, 0, (void*)g_twoFingerTap);
+                    }
                     break;
                 }
 			}
@@ -341,6 +452,8 @@ LRESULT CALLBACK CustomProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			return S_FALSE;
 		case WM_POINTERUPDATE:
 			{
+                if (g_calibrating)
+                    break;
 				POINT last;
 				GetCursorPos(&last);
 				int x = ((int)(short)LOWORD(lParam)); 
@@ -430,15 +543,15 @@ LRESULT WINAPI ShellProc( int nCode, WPARAM wParam, LPARAM lParam )
 	{
 		switch(nCode)
 		{
+#if EXTENDED_LOG
 		case HCBT_CREATEWND: // just for logging purposes
 			{
 				HWND hWnd = (HWND)wParam;
 				LPCREATESTRUCT createStruct = ((CBT_CREATEWND*)lParam)->lpcs;
-
 				logPrint("Got object name %s, hwnd %i, style %X\r\n", createStruct->lpszName, hWnd, createStruct->style);
 			}
 			break;
-			
+#endif			
 		case HCBT_ACTIVATE: // going to activate window
 			{
 				HWND hWnd = (HWND)wParam;
@@ -560,7 +673,10 @@ BOOL WINAPI DllMain( HINSTANCE hinstDll, DWORD fdwReason, PVOID fImpLoad )
 				logPrint("Got empty process module name, id %i\r\n", processId);
 			}
 
-            g_isArcanum = stristr(exeName, "arcanum") != NULL;
+            loadSettings(IniFile, strrchr(exeName, '\\'));
+
+            if (g_mousePointerAddress)
+                logPrint("Using mouse pointer address 0x%08X\r\n", g_mousePointerAddress);
 
 			if (g_processId == 0)// stristr(exeName, "rundll32")) // loading from RunDll32
 			{
